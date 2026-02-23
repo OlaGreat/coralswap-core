@@ -2,13 +2,26 @@
 
 use soroban_sdk::Env;
 
+// Compiled WASM bytecode for cross-contract deployment in tests.
+// Must build with: cargo build --target wasm32-unknown-unknown --release
+const PAIR_WASM: &[u8] = include_bytes!(
+    "../../../../target/wasm32v1-none/release/coralswap_pair.wasm"
+);
+const LP_TOKEN_WASM: &[u8] = include_bytes!(
+    "../../../../target/wasm32v1-none/release/coralswap_lp_token.wasm"
+);
+
 mod factory_tests {
     use super::*;
     use crate::{Factory, FactoryClient};
     use soroban_sdk::{testutils::Address as _, Address, Bytes, Vec};
 
+    /// Helper: sets up a fresh Env, deploys the factory, initializes it with
+    /// real pair / LP-token WASM hashes, and returns commonly-needed handles.
     fn setup_env<'a>() -> (Env, FactoryClient<'a>, Address, Address, Address, Address) {
         let env = Env::default();
+        env.mock_all_auths();
+
         let factory_address = env.register_contract(None, Factory);
         let client = FactoryClient::new(&env, &factory_address);
 
@@ -17,8 +30,9 @@ mod factory_tests {
         let signer_3 = Address::generate(&env);
         let fee_to_setter = Address::generate(&env);
 
-        let pair_wasm_hash = env.deployer().upload_contract_wasm(Bytes::new(&env));
-        let lp_token_wasm_hash = env.deployer().upload_contract_wasm(Bytes::new(&env));
+        // Upload real WASM so deployer().deploy() produces working contracts.
+        let pair_wasm_hash = env.deployer().upload_contract_wasm(Bytes::from_slice(&env, PAIR_WASM));
+        let lp_token_wasm_hash = env.deployer().upload_contract_wasm(Bytes::from_slice(&env, LP_TOKEN_WASM));
 
         client.initialize(
             &Vec::from_array(&env, [signer_1, signer_2, signer_3]),
@@ -33,6 +47,8 @@ mod factory_tests {
         (env, client, token_a, token_b, factory_address, fee_to_setter)
     }
 
+    // ── Initialization ───────────────────────────────────────────────────────
+
     #[test]
     fn test_initialization() {
         let (_env, client, _, _, _, _) = setup_env();
@@ -40,19 +56,197 @@ mod factory_tests {
     }
 
     #[test]
-    fn test_create_pair_validation() {
-        let (_env, client, token_a, _token_b, _, _) = setup_env();
+    fn test_double_initialization_fails() {
+        let (env, client, _, _, _, fee_to_setter) = setup_env();
 
-        // Identical tokens should return Err(IdenticalTokens = 8)
-        let result = client.try_create_pair(&token_a, &token_a);
+        let pair_wasm_hash = env.deployer().upload_contract_wasm(Bytes::from_slice(&env, PAIR_WASM));
+        let lp_token_wasm_hash = env.deployer().upload_contract_wasm(Bytes::from_slice(&env, LP_TOKEN_WASM));
+
+        let result = client.try_initialize(
+            &Vec::from_array(
+                &env,
+                [
+                    Address::generate(&env),
+                    Address::generate(&env),
+                    Address::generate(&env),
+                ],
+            ),
+            &pair_wasm_hash,
+            &lp_token_wasm_hash,
+            &fee_to_setter,
+        );
         assert!(result.is_err());
-        // Soroban error codes are a bit tricky to match directly in try_ calls without more boilerplate,
-        // but we verify it's an error.
+    }
+
+    // ── create_pair: happy path ──────────────────────────────────────────────
+
+    #[test]
+    fn test_create_pair_happy_path() {
+        let (_env, client, token_a, token_b, _, _) = setup_env();
+
+        let pair_addr = client.create_pair(&token_a, &token_b);
+
+        // The returned pair address should be retrievable via get_pair.
+        let stored = client.get_pair(&token_a, &token_b);
+        assert_eq!(stored, Some(pair_addr.clone()));
     }
 
     #[test]
-    fn test_get_pair_none_for_missing() {
+    fn test_create_pair_reverse_order_returns_same_pair() {
+        let (_env, client, token_a, token_b, _, _) = setup_env();
+
+        let pair_addr = client.create_pair(&token_a, &token_b);
+
+        // Querying with reversed token order must return the same pair.
+        let stored_reverse = client.get_pair(&token_b, &token_a);
+        assert_eq!(stored_reverse, Some(pair_addr));
+    }
+
+    #[test]
+    fn test_create_pair_canonical_ordering() {
+        let (env, client, _, _, _, _) = setup_env();
+
+        let token_x = Address::generate(&env);
+        let token_y = Address::generate(&env);
+
+        // Create with (x, y), then verify both orderings resolve.
+        let pair_1 = client.create_pair(&token_x, &token_y);
+        assert_eq!(client.get_pair(&token_x, &token_y), Some(pair_1.clone()));
+        assert_eq!(client.get_pair(&token_y, &token_x), Some(pair_1));
+    }
+
+    #[test]
+    fn test_create_multiple_pairs() {
+        let (env, client, token_a, token_b, _, _) = setup_env();
+
+        let token_c = Address::generate(&env);
+
+        let pair_ab = client.create_pair(&token_a, &token_b);
+        let pair_ac = client.create_pair(&token_a, &token_c);
+        let pair_bc = client.create_pair(&token_b, &token_c);
+
+        // Each pair should have a distinct address.
+        assert_ne!(pair_ab, pair_ac);
+        assert_ne!(pair_ab, pair_bc);
+        assert_ne!(pair_ac, pair_bc);
+
+        // All pairs should be retrievable.
+        assert_eq!(client.get_pair(&token_a, &token_b), Some(pair_ab));
+        assert_eq!(client.get_pair(&token_a, &token_c), Some(pair_ac));
+        assert_eq!(client.get_pair(&token_b, &token_c), Some(pair_bc));
+    }
+
+    // ── create_pair: error paths ─────────────────────────────────────────────
+
+    #[test]
+    fn test_create_pair_identical_tokens() {
+        let (_env, client, token_a, _token_b, _, _) = setup_env();
+
+        let result = client.try_create_pair(&token_a, &token_a);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_pair_duplicate_returns_error() {
+        let (_env, client, token_a, token_b, _, _) = setup_env();
+
+        // First creation succeeds.
+        client.create_pair(&token_a, &token_b);
+
+        // Second creation with same tokens must fail (PairExists).
+        let result = client.try_create_pair(&token_a, &token_b);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_pair_duplicate_reversed_order() {
+        let (_env, client, token_a, token_b, _, _) = setup_env();
+
+        // Create (A, B).
+        client.create_pair(&token_a, &token_b);
+
+        // Attempt (B, A) — canonical sort means this is the same pair.
+        let result = client.try_create_pair(&token_b, &token_a);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_pair_while_paused() {
+        let (env, client, token_a, token_b, _, _) = setup_env();
+
+        // Pause the factory.
+        client.pause(&Vec::from_array(
+            &env,
+            [
+                Address::generate(&env),
+                Address::generate(&env),
+                Address::generate(&env),
+            ],
+        ));
+        assert!(client.is_paused());
+
+        // Creating a pair while paused must fail.
+        let result = client.try_create_pair(&token_a, &token_b);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_pair_after_unpause() {
+        let (env, client, token_a, token_b, _, _) = setup_env();
+
+        // Pause then unpause.
+        let signers = Vec::from_array(
+            &env,
+            [
+                Address::generate(&env),
+                Address::generate(&env),
+                Address::generate(&env),
+            ],
+        );
+        client.pause(&signers);
+        client.unpause(&signers);
+        assert!(!client.is_paused());
+
+        // Creating after unpause should succeed.
+        let pair_addr = client.create_pair(&token_a, &token_b);
+        assert_eq!(client.get_pair(&token_a, &token_b), Some(pair_addr));
+    }
+
+    // ── get_pair: edge cases ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_get_pair_returns_none_for_missing() {
         let (_env, client, token_a, token_b, _, _) = setup_env();
         assert!(client.get_pair(&token_a, &token_b).is_none());
+    }
+
+    // ── Fee management ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_set_fee_to() {
+        let (env, client, _, _, _, fee_to_setter) = setup_env();
+
+        let fee_recipient = Address::generate(&env);
+        client.set_fee_to(&fee_to_setter, &Some(fee_recipient.clone()));
+        assert_eq!(client.fee_to(), Some(fee_recipient));
+    }
+
+    #[test]
+    fn test_set_fee_to_unauthorized() {
+        let (env, client, _, _, _, _) = setup_env();
+
+        let rando = Address::generate(&env);
+        let fee_recipient = Address::generate(&env);
+        let result = client.try_set_fee_to(&rando, &Some(fee_recipient));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_set_fee_to_setter() {
+        let (env, client, _, _, _, fee_to_setter) = setup_env();
+
+        let new_setter = Address::generate(&env);
+        client.set_fee_to_setter(&fee_to_setter, &new_setter);
+        assert_eq!(client.fee_to_setter(), Some(new_setter));
     }
 }
