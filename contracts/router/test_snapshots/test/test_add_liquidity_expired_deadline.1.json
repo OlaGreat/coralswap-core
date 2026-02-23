@@ -148,7 +148,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "remove_liquidity"
+                "symbol": "add_liquidity"
               }
             ],
             "data": {
@@ -162,19 +162,25 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 100
+                    "lo": 1000
                   }
                 },
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 50
+                    "lo": 1000
                   }
                 },
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 50
+                    "lo": 500
+                  }
+                },
+                {
+                  "i128": {
+                    "hi": 0,
+                    "lo": 500
                   }
                 },
                 {
@@ -202,7 +208,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "remove_liquidity"
+                "symbol": "add_liquidity"
               }
             ],
             "data": {
@@ -263,7 +269,7 @@
                   "string": "contract try_call failed"
                 },
                 {
-                  "symbol": "remove_liquidity"
+                  "symbol": "add_liquidity"
                 },
                 {
                   "vec": [
@@ -276,19 +282,25 @@
                     {
                       "i128": {
                         "hi": 0,
-                        "lo": 100
+                        "lo": 1000
                       }
                     },
                     {
                       "i128": {
                         "hi": 0,
-                        "lo": 50
+                        "lo": 1000
                       }
                     },
                     {
                       "i128": {
                         "hi": 0,
-                        "lo": 50
+                        "lo": 500
+                      }
+                    },
+                    {
+                      "i128": {
+                        "hi": 0,
+                        "lo": 500
                       }
                     },
                     {

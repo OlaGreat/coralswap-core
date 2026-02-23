@@ -14,6 +14,7 @@ pub trait FactoryInterface {
 pub trait PairInterface {
     fn burn(env: Env, to: Address) -> (i128, i128);
     fn lp_token(env: Env) -> Address;
+    fn mint(env: Env, to: Address) -> i128;
     fn swap(env: Env, amount_a_out: i128, amount_b_out: i128, to: Address);
     fn get_reserves(env: Env) -> (i128, i128, u64);
     fn get_current_fee_bps(env: Env) -> u32;
@@ -39,10 +40,10 @@ pub trait TokenInterface {
 #[allow(dead_code)]
 pub fn get_amount_out(
     _env: &Env,
-    amount_in: i128,
-    reserve_in: i128,
-    reserve_out: i128,
-    fee_bps: u32,
+    _amount_in: i128,
+    _reserve_in: i128,
+    _reserve_out: i128,
+    _fee_bps: u32,
 ) -> Result<i128, RouterError> {
     todo!()
 }
@@ -54,10 +55,10 @@ pub fn get_amount_out(
 #[allow(dead_code)]
 pub fn get_amount_in(
     _env: &Env,
-    amount_out: i128,
-    reserve_in: i128,
-    reserve_out: i128,
-    fee_bps: u32,
+    _amount_out: i128,
+    _reserve_in: i128,
+    _reserve_out: i128,
+    _fee_bps: u32,
 ) -> Result<i128, RouterError> {
     todo!()
 }
@@ -72,6 +73,46 @@ pub fn sort_tokens(
     _token_b: &Address,
 ) -> Result<(Address, Address), RouterError> {
     todo!()
+}
+
+/// Computes the optimal deposit amounts for adding liquidity.
+///
+/// If the pool is empty (first deposit), returns the desired amounts as-is.
+/// Otherwise, calculates the optimal ratio to preserve pool proportions while
+/// respecting the user's minimum constraints.
+///
+/// # Arguments
+/// * `amount_a_desired` - Desired amount of token_a to deposit
+/// * `amount_b_desired` - Desired amount of token_b to deposit
+/// * `amount_a_min` - Minimum acceptable amount of token_a
+/// * `amount_b_min` - Minimum acceptable amount of token_b
+/// * `reserve_a` - Current reserve of token_a in the pair
+/// * `reserve_b` - Current reserve of token_b in the pair
+pub fn compute_optimal_amounts(
+    amount_a_desired: i128,
+    amount_b_desired: i128,
+    amount_a_min: i128,
+    amount_b_min: i128,
+    reserve_a: i128,
+    reserve_b: i128,
+) -> Result<(i128, i128), RouterError> {
+    if reserve_a == 0 && reserve_b == 0 {
+        return Ok((amount_a_desired, amount_b_desired));
+    }
+
+    let amount_b_optimal = amount_a_desired * reserve_b / reserve_a;
+    if amount_b_optimal <= amount_b_desired {
+        if amount_b_optimal < amount_b_min {
+            return Err(RouterError::SlippageExceeded);
+        }
+        Ok((amount_a_desired, amount_b_optimal))
+    } else {
+        let amount_a_optimal = amount_b_desired * reserve_a / reserve_b;
+        if amount_a_optimal < amount_a_min {
+            return Err(RouterError::SlippageExceeded);
+        }
+        Ok((amount_a_optimal, amount_b_desired))
+    }
 }
 
 /// Get the pair address from the factory contract
