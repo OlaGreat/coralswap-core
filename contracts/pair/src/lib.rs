@@ -1,7 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 
 #[cfg(test)]
-extern crate std;
+extern crate std; // soroban-sdk testutils require std; pair is no_std so we opt-in explicitly
 
 mod dynamic_fee;
 mod errors;
@@ -37,6 +37,37 @@ pub struct Pair;
 impl Pair {
     // ── Initialization ────────────────────────────────────────────────────────
 
+    /// Initializes a new liquidity pair with two tokens and an LP token.
+    ///
+    /// Sets up the pair contract with initial configuration. This function must be called
+    /// exactly once after the contract is deployed. It establishes the relationship between
+    /// two ERC-20 tokens and their corresponding LP token.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban environment
+    /// * `factory` - The address of the factory contract that created this pair
+    /// * `token_a` - The address of the first token in the pair
+    /// * `token_b` - The address of the second token in the pair
+    /// * `lp_token` - The address of the LP (liquidity provider) token
+    ///
+    /// # Returns
+    /// * `Ok(())` - If initialization was successful
+    /// * `Err(PairError::AlreadyInitialized)` - If the pair has already been initialized
+    ///
+    /// # Panics
+    /// * If `factory`, `token_a`, `token_b`, or `lp_token` addresses are invalid
+    ///
+    /// # Example
+    /// ```ignore
+    /// let result = Pair::initialize(
+    ///     env,
+    ///     factory_address,
+    ///     token_a_address,
+    ///     token_b_address,
+    ///     lp_token_address,
+    /// );
+    /// assert_eq!(result, Ok(()));
+    /// ```
     pub fn initialize(
         env: Env,
         factory: Address,
@@ -63,6 +94,34 @@ impl Pair {
         Ok(())
     }
 
+    /// Mints LP tokens when liquidity is deposited into the pair.
+    ///
+    /// The caller must have already transferred both token_a and token_b to this contract
+    /// in amounts greater than the current reserves. The difference between transferred
+    /// amounts and current reserves is treated as the liquidity contribution. The
+    /// corresponding amount of LP tokens is minted to the `to` address.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban environment
+    /// * `to` - The recipient address for the minted LP tokens
+    ///
+    /// # Returns
+    /// * `Ok(liquidity)` - The amount of LP tokens minted
+    /// * `Err(PairError::NotInitialized)` - If the pair has not been initialized
+    /// * `Err(PairError::InsufficientLiquidityMinted)` - If the computed liquidity amount is zero or negative
+    /// * `Err(PairError::Overflow)` - If arithmetic operations overflow
+    ///
+    /// # Panics
+    /// * If authentication from `to` address fails
+    /// * If token balance queries fail
+    /// * If LP token minting transaction fails
+    ///
+    /// # Example
+    /// ```ignore
+    /// // After transferring tokens to the pair contract
+    /// let lp_amount = Pair::mint(env, recipient_address)?;
+    /// println!("Minted {} LP tokens", lp_amount);
+    /// ```
     pub fn mint(env: Env, to: Address) -> Result<i128, PairError> {
         to.require_auth();
 
@@ -109,6 +168,33 @@ impl Pair {
         Ok(liquidity)
     }
 
+    /// Burns LP tokens and returns the underlying liquidity (both tokens).
+    ///
+    /// The caller must have already transferred LP tokens to this contract. The LP token
+    /// balance in the contract is burned, and the proportional amounts of both token_a
+    /// and token_b are transferred to the `to` address.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban environment
+    /// * `to` - The recipient address for the withdrawn tokens
+    ///
+    /// # Returns
+    /// * `Ok((amount_a, amount_b))` - The amounts of token_a and token_b returned
+    /// * `Err(PairError::NotInitialized)` - If the pair has not been initialized
+    /// * `Err(PairError::InsufficientLiquidityBurned)` - If computed amounts are zero or negative
+    /// * `Err(PairError::Overflow)` - If arithmetic operations overflow
+    ///
+    /// # Panics
+    /// * If authentication from `to` address fails
+    /// * If token operations (burn, transfer) fail
+    /// * If reserve update fails
+    ///
+    /// # Example
+    /// ```ignore
+    /// // After transferring LP tokens to the pair contract
+    /// let (amount_a, amount_b) = Pair::burn(env, recipient_address)?;
+    /// println!("Received {} token_a and {} token_b", amount_a, amount_b);
+    /// ```
     pub fn burn(env: Env, to: Address) -> Result<(i128, i128), PairError> {
         to.require_auth();
 
@@ -144,15 +230,39 @@ impl Pair {
 
     // ── Swap ──────────────────────────────────────────────────────────────────
 
-    /// Constant-product swap with dynamic fee and reentrancy protection.
+    /// Executes a constant-product swap with dynamic fees and reentrancy protection.
     ///
-    /// Caller must have already transferred input tokens to this contract
-    /// before calling (standard Uniswap V2 pattern).
+    /// Performs an atomic token swap using the constant-product formula (x·y=k). The caller
+    /// must have transferred the input tokens to this contract before calling (Uniswap V2 pattern).
+    /// This function includes dynamic fee calculation based on market volatility, and verifies
+    /// that the k-invariant is maintained.
     ///
     /// # Arguments
-    /// * `amount_a_out` – amount of token_a to send out (0 if swapping A→B)
-    /// * `amount_b_out` – amount of token_b to send out (0 if swapping B→A)
-    /// * `to`           – recipient of the output tokens
+    /// * `env` - The Soroban environment
+    /// * `amount_a_out` - Amount of token_a to receive (0 if swapping B→A)
+    /// * `amount_b_out` - Amount of token_b to receive (0 if swapping A→B)
+    /// * `to` - Recipient address for the output tokens
+    ///
+    /// # Returns
+    /// * `Ok(())` - If the swap executed successfully
+    /// * `Err(PairError::NotInitialized)` - If the pair has not been initialized
+    /// * `Err(PairError::InsufficientOutputAmount)` - If both output amounts are zero or result is invalid
+    /// * `Err(PairError::InsufficientLiquidity)` - If requested output exceeds available reserves
+    /// * `Err(PairError::InsufficientInputAmount)` - If no input tokens were transferred
+    /// * `Err(PairError::InvalidK)` - If the k-invariant check fails after fee application
+    /// * `Err(PairError::Overflow)` - If arithmetic operations overflow
+    ///
+    /// # Panics
+    /// * If reentrancy protection fails (concurrent swap attempted)
+    /// * If token transfer operations fail
+    /// * If reserve or fee state updates fail
+    ///
+    /// # Example
+    /// ```ignore
+    /// // After transferring 100 units of token_a to the pair contract
+    /// let result = Pair::swap(env, 0, 50, recipient_address)?;
+    /// // Swap 100 token_a for 50 token_b
+    /// ```
     pub fn swap(
         env: Env,
         amount_a_out: i128,
@@ -265,7 +375,7 @@ impl Pair {
         let new_price = if balance_a > 0 { (balance_b * 10_000) / balance_a } else { 0 };
         let price_delta = (new_price - old_price).unsigned_abs() as i128;
 
-        dynamic_fee::update_volatility(env, &mut fee_state, price_delta, trade_size, total_reserve);
+        dynamic_fee::update_volatility(env, &mut fee_state, price_delta, trade_size, total_reserve)?;
 
         // ── 13. Update K_last and reserves ────────────────────────────────────
         pair.k_last = balance_a * balance_b;
@@ -294,11 +404,45 @@ impl Pair {
         Ok(())
     }
 
-    // ── Flash Loan ────────────────────────────────────────────────────────────
+    // Flash Loan ────────────────────────────────────────────────────────────
 
-    /// Executes a flash loan of up to `amount_a` of token_a and/or `amount_b`
-    /// of token_b to `receiver`.  The receiver must repay principal + fee
-    /// before the `on_flash_loan` callback returns.
+    /// Executes an uncollateralized flash loan of tokens to a receiver contract.
+    ///
+    /// Sends up to `amount_a` of token_a and/or `amount_b` of token_b to the receiver
+    /// contract. The receiver must implement the flash loan callback interface and must
+    /// return (repay) the borrowed amount plus a fee before the callback completes.
+    /// This function includes reentrancy protection to prevent double-borrowing.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban environment
+    /// * `receiver` - The address of the contract receiving the flash loan (must implement callback)
+    /// * `amount_a` - Amount of token_a to borrow (0 if not needed)
+    /// * `amount_b` - Amount of token_b to borrow (0 if not needed)
+    /// * `data` - Arbitrary data passed to the receiver's callback function
+    ///
+    /// # Returns
+    /// * `Ok(())` - If the flash loan was executed and repaid successfully
+    /// * `Err(PairError::NotInitialized)` - If the pair has not been initialized
+    /// * `Err(PairError::InsufficientLiquidity)` - If requested amounts exceed available reserves
+    /// * `Err(PairError::InvalidK)` - If reserves are invalid after repayment
+    /// * `Err(PairError::Overflow)` - If fee calculations overflow
+    ///
+    /// # Panics
+    /// * If reentrancy detection identifies a concurrent flash loan
+    /// * If token transfer operations fail
+    /// * If the receiver's callback fails or returns insufficient repayment
+    /// * If reserve updates fail
+    ///
+    /// # Example
+    /// ```ignore
+    /// let result = Pair::flash_loan(
+    ///     env,
+    ///     receiver_contract_address,
+    ///     1000,  // Borrow 1000 of token_a
+    ///     0,     // Don't borrow token_b
+    ///     Bytes::new(&env, b"custom_data"),
+    /// )?;
+    /// ```
     pub fn flash_loan(
         env: Env,
         receiver: Address,
@@ -309,11 +453,54 @@ impl Pair {
         flash_loan::execute_flash_loan(&env, &receiver, amount_a, amount_b, &data)
     }
 
+    /// Returns the current reserves and block timestamp of the pair.
+    ///
+    /// Retrieves the current amounts of both tokens held by the pair contract and the
+    /// timestamp of the last state-modifying operation. These values are used by external
+    /// contracts and off-chain systems for price calculations and liquidity information.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban environment
+    ///
+    /// # Returns
+    /// A tuple of `(reserve_a, reserve_b, block_timestamp_last)` where:
+    /// * `reserve_a` - Current amount of token_a in the pair
+    /// * `reserve_b` - Current amount of token_b in the pair
+    /// * `block_timestamp_last` - The ledger timestamp of the last update
+    ///
+    /// # Panics
+    /// * If the pair has not been initialized (falls back to (0, 0, 0) with unwrap)
+    ///
+    /// # Example
+    /// ```ignore
+    /// let (reserve_a, reserve_b, last_timestamp) = Pair::get_reserves(env);
+    /// println!("Reserves: {} token_a, {} token_b at timestamp {}",
+    ///     reserve_a, reserve_b, last_timestamp);
+    /// ```
     pub fn get_reserves(env: Env) -> (i128, i128, u64) {
         let state = get_pair_state(&env).ok_or(PairError::NotInitialized).unwrap();
         (state.reserve_a, state.reserve_b, state.block_timestamp_last)
     }
 
+    /// Returns the current dynamic fee in basis points.
+    ///
+    /// Calculates and returns the current swap fee based on recent market volatility.
+    /// The fee adjusts dynamically:higher volatility results in higher fees, providing
+    /// protection against slippage and MEV. A basis point (bps) is 1/100th of a percent,
+    /// so a fee of 30 bps equals 0.3%.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban environment
+    ///
+    /// # Returns
+    /// The current swap fee in basis points (e.g., 30 for 0.3%)
+    ///
+    /// # Example
+    /// ```ignore
+    /// let fee_bps = Pair::get_current_fee_bps(env);
+    /// let fee_percent = fee_bps as f64 / 100.0;
+    /// println!("Current swap fee: {} bps ({:.2}%)", fee_bps, fee_percent);
+    /// ```
     pub fn get_current_fee_bps(env: Env) -> u32 {
         get_fee_state(&env).map(|fs| dynamic_fee::compute_fee_bps(&fs)).unwrap_or(30)
     }
@@ -323,6 +510,31 @@ impl Pair {
         Ok(state.lp_token)
     }
 
+    /// Synchronizes the pair's internal reserves with actual token balances.
+    ///
+    /// Updates the stored reserves to match the actual token balances currently held by
+    /// the pair contract. This is useful for emergency recovery if reserves become
+    /// desynchronized due to direct token transfers or other exceptional circumstances.
+    /// Should only be called when necessary, as it bypasses normal state update logic.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban environment
+    ///
+    /// # Returns
+    /// * `Ok(())` - If reserves were successfully synchronized
+    /// * `Err(PairError::NotInitialized)` - If the pair has not been initialized
+    ///
+    /// # Panics
+    /// * If token balance queries fail
+    /// * If reserve update transaction fails
+    /// * If event emission fails
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Resynchronize reserves after an anomalous transaction
+    /// let result = Pair::sync(env)?;
+    /// println!("Reserves synchronized");
+    /// ```
     pub fn sync(env: Env) -> Result<(), PairError> {
         let mut state = get_pair_state(&env).ok_or(PairError::NotInitialized)?;
         let contract = env.current_contract_address();

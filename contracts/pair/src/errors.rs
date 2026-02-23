@@ -18,4 +18,5 @@ pub enum PairError {
     ZeroAddress = 111,
     InsufficientLiquidityMinted = 112,
     InsufficientLiquidityBurned = 113,
+    InvalidInput = 114,
 }
