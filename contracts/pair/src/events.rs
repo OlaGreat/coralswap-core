@@ -39,7 +39,7 @@ impl PairEvents {
     }
 
     // Emits a `flash_loan` event after a successful flash loan.
-   
+
     // Topics: `("pair", "flash_loan")`
     // Data:   `(receiver, amount_a, amount_b, fee_a, fee_b)`
     /// Emits a `flash_loan` event after a successful flash loan.

@@ -29,7 +29,7 @@ fn get_amount_out(
         return Err(PairError::InsufficientLiquidity);
     }
 
-    let bps_denom = BPS_DENOMINATOR as i128;
+    let bps_denom = BPS_DENOMINATOR;
     let fee_factor = bps_denom.checked_sub(fee_bps as i128).ok_or(PairError::Overflow)?;
 
     let amount_in_with_fee = amount_in.checked_mul(fee_factor).ok_or(PairError::Overflow)?;
@@ -79,9 +79,9 @@ mod swap_math_tests {
     fn test_basic_swap_amount_out() {
         let _env = Env::default();
 
-        let reserve_in: i128 = 1_000_000_0000000; // 1 000 000 tokens (7 decimals)
-        let reserve_out: i128 = 1_000_000_0000000;
-        let amount_in: i128 = 1_000_0000000; // 1 000 tokens
+        let reserve_in: i128 = 10_000_000_000_000; // 1 000 000 tokens (7 decimals)
+        let reserve_out: i128 = 10_000_000_000_000;
+        let amount_in: i128 = 10_000_000_000; // 1 000 tokens
         let fee_bps: u32 = 30; // 0.30 %
 
         let amount_out = get_amount_out(amount_in, reserve_in, reserve_out, fee_bps)
@@ -344,8 +344,8 @@ mod swap_math_tests {
         let _env = Env::default();
 
         // Pool with 100M tokens on each side, swap 10M (10 %).
-        let reserve: i128 = 100_000_000_0000000;
-        let amount_in: i128 = 10_000_000_0000000;
+        let reserve: i128 = 1_000_000_000_000_000;
+        let amount_in: i128 = 100_000_000_000_000;
         let fee_bps: u32 = 30;
 
         let amount_out = get_amount_out(amount_in, reserve, reserve, fee_bps).unwrap();

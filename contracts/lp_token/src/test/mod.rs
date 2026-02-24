@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 // Note: Due to a known issue with soroban-sdk 21.7.6 testutils and the arbitrary feature,
 // comprehensive unit tests are temporarily disabled. The contract implementation follows
 // the SEP-41 token standard and has been verified to compile successfully.
@@ -18,9 +16,3 @@
 //
 // Integration tests can be performed using the soroban CLI or in the context
 // of the full DEX system where this LP token will be used by pair contracts.
-
-#[test]
-fn test_contract_compiles() {
-    // This test ensures the contract compiles successfully
-    assert!(true);
-}

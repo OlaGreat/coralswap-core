@@ -47,18 +47,11 @@ pub fn update_volatility(
 
     // --- EMA update ---------------------------------------------------------
     // alpha_term = ema_alpha * observation
-    let alpha_term = fee_state
-        .ema_alpha
-        .checked_mul(observation)
-        .ok_or(PairError::Overflow)?;
+    let alpha_term = fee_state.ema_alpha.checked_mul(observation).ok_or(PairError::Overflow)?;
 
     // prev_term = (SCALE - ema_alpha) * vol_accumulator
-    let complement = SCALE
-        .checked_sub(fee_state.ema_alpha)
-        .ok_or(PairError::Overflow)?;
-    let prev_term = complement
-        .checked_mul(fee_state.vol_accumulator)
-        .ok_or(PairError::Overflow)?;
+    let complement = SCALE.checked_sub(fee_state.ema_alpha).ok_or(PairError::Overflow)?;
+    let prev_term = complement.checked_mul(fee_state.vol_accumulator).ok_or(PairError::Overflow)?;
 
     // new_accumulator = (alpha_term + prev_term) / SCALE
     fee_state.vol_accumulator = alpha_term
@@ -147,13 +140,11 @@ mod tests {
 
         // Small trade
         let mut state_small = default_fee_state(alpha);
-        update_volatility(&env, &mut state_small, price_delta, 1_000, total_reserve)
-            .unwrap();
+        update_volatility(&env, &mut state_small, price_delta, 1_000, total_reserve).unwrap();
 
         // Large trade (100× bigger)
         let mut state_large = default_fee_state(alpha);
-        update_volatility(&env, &mut state_large, price_delta, 100_000, total_reserve)
-            .unwrap();
+        update_volatility(&env, &mut state_large, price_delta, 100_000, total_reserve).unwrap();
 
         assert!(
             state_large.vol_accumulator > state_small.vol_accumulator,
@@ -179,8 +170,7 @@ mod tests {
         // but integer rounding slows it, so we use 200 to be safe.
         let mut prev = 0i128;
         for _ in 0..200 {
-            update_volatility(&env, &mut state, price_delta, trade_size, total_reserve)
-                .unwrap();
+            update_volatility(&env, &mut state, price_delta, trade_size, total_reserve).unwrap();
             // Each step should move closer (or equal) to steady state.
             assert!(
                 state.vol_accumulator >= prev,
@@ -198,8 +188,7 @@ mod tests {
         // a floor caused by rounding. We verify it's within 10% of theoretical.
         let theoretical = 100i128;
         assert!(
-            state.vol_accumulator > theoretical * 9 / 10
-                && state.vol_accumulator <= theoretical,
+            state.vol_accumulator > theoretical * 9 / 10 && state.vol_accumulator <= theoretical,
             "accumulator {} should converge to ~{} (within 10%)",
             state.vol_accumulator,
             theoretical,
@@ -273,13 +262,7 @@ mod tests {
         let mut state = default_fee_state(SCALE / 10);
 
         // price_delta near i128::MAX should overflow in checked_mul.
-        let result = update_volatility(
-            &env,
-            &mut state,
-            i128::MAX / 2,
-            i128::MAX / 2,
-            1,
-        );
+        let result = update_volatility(&env, &mut state, i128::MAX / 2, i128::MAX / 2, 1);
         assert_eq!(result, Err(PairError::Overflow));
     }
 
@@ -288,13 +271,7 @@ mod tests {
         let env = Env::default();
         let mut state = default_fee_state(SCALE / 10);
 
-        let result = update_volatility(
-            &env,
-            &mut state,
-            100,
-            i128::MAX,
-            1,
-        );
+        let result = update_volatility(&env, &mut state, 100, i128::MAX, 1);
         assert_eq!(result, Err(PairError::Overflow));
     }
 

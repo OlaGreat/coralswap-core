@@ -1,23 +1,23 @@
 #![cfg(test)]
 
-use crate::{Pair, PairClient};
 use crate::storage::{FeeState, PairStorage};
+use crate::{Pair, PairClient};
 use soroban_sdk::{testutils::Address as _, testutils::Ledger, Address, Env};
 
 fn setup_test_env() -> (Env, PairClient<'static>) {
     let env = Env::default();
     env.mock_all_auths();
-    
+
     let pair_id = env.register_contract(None, Pair);
     let client = PairClient::new(&env, &pair_id);
-    
+
     (env, client)
 }
 
 #[test]
 fn test_get_reserves_uninitialized_panics() {
     let (_env, _client) = setup_test_env();
-    
+
     // get_reserves should panic if not initialized
     // However, since we can't easily catch a panic in soroban tests with `should_panic` cleanly without wrapper,
     // we just know it panics via unwrap() in lib.rs: get_pair_state(&env).ok_or(PairError::NotInitialized).unwrap();
@@ -40,7 +40,7 @@ fn test_get_reserves_initialized() {
     pair_client.initialize(&factory, &token_a, &token_b, &lp_token);
 
     let (reserve_a, reserve_b, timestamp) = pair_client.get_reserves();
-    
+
     assert_eq!(reserve_a, 0);
     assert_eq!(reserve_b, 0);
     // Timestamp should correspond to when initialize was called.
@@ -70,7 +70,7 @@ fn test_get_current_fee_bps_initialized_no_volatility() {
     let lp_token = Address::generate(&env);
 
     pair_client.initialize(&factory, &token_a, &token_b, &lp_token);
-    
+
     // Also we need to simulate the fee state being set by initialization or default.
     // Actually, `initialize` does NOT set the FeeState. It's set during `swap` when decaying/updating.
     // If it's not set, `get_current_fee_bps` returns 30 (fallback).
@@ -85,7 +85,7 @@ fn test_get_current_fee_bps_initialized_no_volatility() {
 fn test_get_reserves_after_state_change() {
     let env = Env::default();
     env.mock_all_auths();
-    
+
     env.ledger().set_timestamp(12345);
 
     let contract_id = env.register_contract(None, Pair);
@@ -105,10 +105,10 @@ fn test_get_reserves_after_state_change() {
         price_b_cumulative: 0,
         k_last: 2000000,
     };
-    
-    // Hack: use env to invoke bare function or just use pair_client which invokes `Pair` under the hood. 
+
+    // Hack: use env to invoke bare function or just use pair_client which invokes `Pair` under the hood.
     // Wait, setting state directly on the contract instance requires `soroban_sdk::Env::as_contract`.
-    
+
     env.as_contract(&contract_id, || {
         crate::storage::set_pair_state(&env, &state);
     });
@@ -123,7 +123,7 @@ fn test_get_reserves_after_state_change() {
 fn test_get_current_fee_bps_with_state() {
     let env = Env::default();
     env.mock_all_auths();
-    
+
     let contract_id = env.register_contract(None, Pair);
     let pair_client = PairClient::new(&env, &contract_id);
 
@@ -138,7 +138,7 @@ fn test_get_current_fee_bps_with_state() {
         last_fee_update: 0,
         decay_threshold_blocks: 100,
     };
-    
+
     env.as_contract(&contract_id, || {
         crate::storage::set_fee_state(&env, &fee_state);
     });

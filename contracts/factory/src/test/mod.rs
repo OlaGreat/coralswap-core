@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use soroban_sdk::Env;
 
 mod factory_tests {
@@ -58,7 +56,7 @@ mod factory_tests {
         );
 
         // Verify state after init
-        assert_eq!(client.is_paused(), false);
+        assert!(!client.is_paused());
         assert!(client.fee_to().is_none());
         assert_eq!(client.fee_to_setter(), Some(fee_to_setter));
     }
@@ -146,7 +144,7 @@ mod factory_tests {
             &fee_to_setter,
         );
 
-        assert_eq!(client.is_paused(), false);
+        assert!(!client.is_paused());
     }
 
     #[test]
@@ -167,7 +165,7 @@ mod factory_tests {
 
         client.initialize(&signers, &pair_wasm_hash, &lp_token_wasm_hash, &fee_to_setter);
 
-        assert_eq!(client.is_paused(), false);
+        assert!(!client.is_paused());
     }
 
     // ---------- is_paused after init ----------
@@ -175,7 +173,7 @@ mod factory_tests {
     #[test]
     fn test_is_paused_after_init() {
         let (_env, client, _, _, _, _) = setup_env();
-        assert_eq!(client.is_paused(), false);
+        assert!(!client.is_paused());
     }
 
     // ---------- Existing tests (adapted) ----------

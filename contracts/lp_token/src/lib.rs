@@ -9,8 +9,8 @@ mod errors;
 mod storage;
 
 use errors::LpTokenError;
-use storage::{AllowanceEntry, LpTokenKey, TokenMetadata};
 use soroban_sdk::{contract, contractimpl, Address, Env, String};
+use storage::{AllowanceEntry, LpTokenKey, TokenMetadata};
 
 #[contract]
 pub struct LpToken;
@@ -35,11 +35,7 @@ impl LpToken {
         env.storage().instance().set(&LpTokenKey::Admin, &admin);
 
         // Store metadata
-        let metadata = TokenMetadata {
-            decimals,
-            name,
-            symbol,
-        };
+        let metadata = TokenMetadata { decimals, name, symbol };
         env.storage().instance().set(&LpTokenKey::Metadata, &metadata);
 
         // Initialize total supply to 0
@@ -51,8 +47,10 @@ impl LpToken {
     /// Get the allowance for spender to transfer from `from`
     pub fn allowance(env: Env, from: Address, spender: Address) -> i128 {
         let key = LpTokenKey::Allowance(from, spender);
-        
-        if let Some(allowance_entry) = env.storage().persistent().get::<LpTokenKey, AllowanceEntry>(&key) {
+
+        if let Some(allowance_entry) =
+            env.storage().persistent().get::<LpTokenKey, AllowanceEntry>(&key)
+        {
             // Check if allowance has expired
             if allowance_entry.expiration_ledger < env.ledger().sequence() {
                 return 0;
@@ -81,17 +79,14 @@ impl LpToken {
         }
 
         let key = LpTokenKey::Allowance(from.clone(), spender.clone());
-        
+
         if amount == 0 {
             // Remove allowance if amount is 0
             env.storage().persistent().remove(&key);
         } else {
-            let allowance_entry = AllowanceEntry {
-                amount,
-                expiration_ledger,
-            };
+            let allowance_entry = AllowanceEntry { amount, expiration_ledger };
             env.storage().persistent().set(&key, &allowance_entry);
-            
+
             // Set TTL for the allowance entry
             let ledgers_to_live = expiration_ledger.saturating_sub(env.ledger().sequence());
             env.storage().persistent().extend_ttl(&key, ledgers_to_live, ledgers_to_live);
@@ -154,38 +149,25 @@ impl LpToken {
     /// Only callable by admin (pair contract)
     pub fn mint(env: Env, to: Address, amount: i128) -> Result<(), LpTokenError> {
         // Get admin and require authorization
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&LpTokenKey::Admin)
-            .ok_or(LpTokenError::NotInitialized)?;
-        
+        let admin: Address =
+            env.storage().instance().get(&LpTokenKey::Admin).ok_or(LpTokenError::NotInitialized)?;
+
         admin.require_auth();
 
         // Increase balance
         let balance_key = LpTokenKey::Balance(to.clone());
         let current_balance: i128 = env.storage().persistent().get(&balance_key).unwrap_or(0);
-        let new_balance = current_balance
-            .checked_add(amount)
-            .ok_or(LpTokenError::Overflow)?;
+        let new_balance = current_balance.checked_add(amount).ok_or(LpTokenError::Overflow)?;
         env.storage().persistent().set(&balance_key, &new_balance);
 
         // Increase total supply
-        let total_supply: i128 = env
-            .storage()
-            .instance()
-            .get(&LpTokenKey::TotalSupply)
-            .unwrap_or(0);
-        let new_total_supply = total_supply
-            .checked_add(amount)
-            .ok_or(LpTokenError::Overflow)?;
+        let total_supply: i128 =
+            env.storage().instance().get(&LpTokenKey::TotalSupply).unwrap_or(0);
+        let new_total_supply = total_supply.checked_add(amount).ok_or(LpTokenError::Overflow)?;
         env.storage().instance().set(&LpTokenKey::TotalSupply, &new_total_supply);
 
         // Emit mint event
-        env.events().publish(
-            (soroban_sdk::symbol_short!("mint"), admin, to),
-            amount,
-        );
+        env.events().publish((soroban_sdk::symbol_short!("mint"), admin, to), amount);
 
         Ok(())
     }
@@ -199,7 +181,7 @@ impl LpToken {
         // Decrease balance
         let balance_key = LpTokenKey::Balance(from.clone());
         let current_balance: i128 = env.storage().persistent().get(&balance_key).unwrap_or(0);
-        
+
         if current_balance < amount {
             return Err(LpTokenError::InsufficientBalance);
         }
@@ -212,59 +194,41 @@ impl LpToken {
         }
 
         // Decrease total supply
-        let total_supply: i128 = env
-            .storage()
-            .instance()
-            .get(&LpTokenKey::TotalSupply)
-            .unwrap_or(0);
+        let total_supply: i128 =
+            env.storage().instance().get(&LpTokenKey::TotalSupply).unwrap_or(0);
         let new_total_supply = total_supply - amount;
         env.storage().instance().set(&LpTokenKey::TotalSupply, &new_total_supply);
 
         // Emit burn event
-        env.events().publish(
-            (soroban_sdk::symbol_short!("burn"), from),
-            amount,
-        );
+        env.events().publish((soroban_sdk::symbol_short!("burn"), from), amount);
 
         Ok(())
     }
 
     /// Get the number of decimals
     pub fn decimals(env: Env) -> u32 {
-        let metadata: TokenMetadata = env
-            .storage()
-            .instance()
-            .get(&LpTokenKey::Metadata)
-            .expect("Token not initialized");
+        let metadata: TokenMetadata =
+            env.storage().instance().get(&LpTokenKey::Metadata).expect("Token not initialized");
         metadata.decimals
     }
 
     /// Get the token name
     pub fn name(env: Env) -> String {
-        let metadata: TokenMetadata = env
-            .storage()
-            .instance()
-            .get(&LpTokenKey::Metadata)
-            .expect("Token not initialized");
+        let metadata: TokenMetadata =
+            env.storage().instance().get(&LpTokenKey::Metadata).expect("Token not initialized");
         metadata.name
     }
 
     /// Get the token symbol
     pub fn symbol(env: Env) -> String {
-        let metadata: TokenMetadata = env
-            .storage()
-            .instance()
-            .get(&LpTokenKey::Metadata)
-            .expect("Token not initialized");
+        let metadata: TokenMetadata =
+            env.storage().instance().get(&LpTokenKey::Metadata).expect("Token not initialized");
         metadata.symbol
     }
 
     /// Get the total supply
     pub fn total_supply(env: Env) -> i128 {
-        env.storage()
-            .instance()
-            .get(&LpTokenKey::TotalSupply)
-            .unwrap_or(0)
+        env.storage().instance().get(&LpTokenKey::TotalSupply).unwrap_or(0)
     }
 
     // Internal helper functions
@@ -287,7 +251,7 @@ impl LpToken {
         // Debit from sender
         let from_key = LpTokenKey::Balance(from.clone());
         let from_balance: i128 = env.storage().persistent().get(&from_key).unwrap_or(0);
-        
+
         if from_balance < amount {
             return Err(LpTokenError::InsufficientBalance);
         }
@@ -302,16 +266,12 @@ impl LpToken {
         // Credit to receiver
         let to_key = LpTokenKey::Balance(to.clone());
         let to_balance: i128 = env.storage().persistent().get(&to_key).unwrap_or(0);
-        let new_to_balance = to_balance
-            .checked_add(amount)
-            .ok_or(LpTokenError::Overflow)?;
+        let new_to_balance = to_balance.checked_add(amount).ok_or(LpTokenError::Overflow)?;
         env.storage().persistent().set(&to_key, &new_to_balance);
 
         // Emit transfer event
-        env.events().publish(
-            (soroban_sdk::symbol_short!("transfer"), from.clone(), to.clone()),
-            amount,
-        );
+        env.events()
+            .publish((soroban_sdk::symbol_short!("transfer"), from.clone(), to.clone()), amount);
 
         Ok(())
     }
@@ -324,12 +284,9 @@ impl LpToken {
         amount: i128,
     ) -> Result<(), LpTokenError> {
         let key = LpTokenKey::Allowance(from.clone(), spender.clone());
-        
-        let allowance_entry: AllowanceEntry = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .ok_or(LpTokenError::InsufficientAllowance)?;
+
+        let allowance_entry: AllowanceEntry =
+            env.storage().persistent().get(&key).ok_or(LpTokenError::InsufficientAllowance)?;
 
         // Check if allowance has expired
         if allowance_entry.expiration_ledger < env.ledger().sequence() {
