@@ -9,3 +9,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 soroban-sdk = { workspace = true }
 coralswap-flash-receiver-interface = { path = "../flash_receiver_interface" }
+
+[target.wasm32-unknown-unknown]
+rustflags = [
+    "-C", "target-feature=-reference-types",
+]
