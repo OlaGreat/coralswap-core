@@ -4,7 +4,8 @@ members = [
     "contracts/pair",
     "contracts/lp_token",
     "contracts/router",
-    "contracts/flash_receiver_interface"
+    "contracts/flash_receiver_interface",
+    "contracts/mock_flash_receiver"
 ]
 resolver = "2"
 

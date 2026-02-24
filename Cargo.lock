@@ -169,6 +169,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "coralswap-mock-flash-receiver"
+version = "0.1.0"
+dependencies = [
+ "coralswap-flash-receiver-interface",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "coralswap-pair"
 version = "0.1.0"
 dependencies = [
