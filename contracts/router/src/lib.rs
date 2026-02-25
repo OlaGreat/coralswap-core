@@ -11,7 +11,7 @@ mod storage;
 mod test;
 
 use errors::RouterError;
-use helpers::{get_pair_address, quote, sort_tokens, FactoryClient, PairClient};
+use helpers::{compute_optimal_amounts, get_pair_address, PairClient};
 use soroban_sdk::{contract, contractimpl, token::TokenClient, Address, Env, Vec};
 use storage::{get_factory, set_factory};
 
@@ -75,78 +75,52 @@ impl Router {
         to: Address,
         deadline: u64,
     ) -> Result<(i128, i128, i128), RouterError> {
+        // Check deadline
         if deadline < env.ledger().timestamp() {
             return Err(RouterError::Expired);
         }
 
-        let (amount_a, amount_b) = Self::_add_liquidity(
-            &env,
-            &token_a,
-            &token_b,
+        // Validate inputs: reject zero desired amounts
+        if amount_a_desired <= 0 || amount_b_desired <= 0 {
+            return Err(RouterError::ZeroAmount);
+        }
+
+        // Validate inputs: reject identical tokens
+        if token_a == token_b {
+            return Err(RouterError::IdenticalTokens);
+        }
+
+        // Get factory address
+        let factory = get_factory(&env).ok_or(RouterError::PairNotFound)?;
+
+        // Get pair address from factory
+        let pair_address = get_pair_address(&env, &factory, &token_a, &token_b)?;
+
+        // Get pair contract client and current reserves
+        let pair_client = PairClient::new(&env, &pair_address);
+        let (reserve_a, reserve_b, _) = pair_client.get_reserves();
+
+        // Calculate optimal deposit amounts preserving pool ratio
+        let (amount_a, amount_b) = compute_optimal_amounts(
             amount_a_desired,
             amount_b_desired,
             amount_a_min,
             amount_b_min,
+            reserve_a,
+            reserve_b,
         )?;
 
-        let factory = get_factory(&env).ok_or(RouterError::PairNotFound)?;
-        let pair_address = get_pair_address(&env, &factory, &token_a, &token_b)?;
-
-        // Transfer tokens to pair
+        // The user must provide authorization for token transfers
         to.require_auth();
 
+        // Transfer tokens from 'to' to the pair contract
         TokenClient::new(&env, &token_a).transfer(&to, &pair_address, &amount_a);
         TokenClient::new(&env, &token_b).transfer(&to, &pair_address, &amount_b);
 
-        let liquidity = PairClient::new(&env, &pair_address).mint(&to);
+        // Mint LP tokens to the recipient
+        let liquidity = pair_client.mint(&to);
 
         Ok((amount_a, amount_b, liquidity))
-    }
-
-    fn _add_liquidity(
-        env: &Env,
-        token_a: &Address,
-        token_b: &Address,
-        amount_a_desired: i128,
-        amount_b_desired: i128,
-        amount_a_min: i128,
-        amount_b_min: i128,
-    ) -> Result<(i128, i128), RouterError> {
-        let factory = get_factory(env).ok_or(RouterError::PairNotFound)?;
-        let mut pair_address = get_pair_address(env, &factory, token_a, token_b).ok();
-
-        if pair_address.is_none() {
-            pair_address = Some(FactoryClient::new(env, &factory).create_pair(token_a, token_b));
-        }
-
-        let pair_client = PairClient::new(env, &pair_address.unwrap());
-        let (reserve_a, reserve_b, _) = pair_client.get_reserves();
-
-        if reserve_a == 0 && reserve_b == 0 {
-            Ok((amount_a_desired, amount_b_desired))
-        } else {
-            let (token_0, _) = sort_tokens(token_a, token_b)?;
-            let (reserve_0, reserve_1) =
-                if token_a == &token_0 { (reserve_a, reserve_b) } else { (reserve_b, reserve_a) };
-
-            let amount_b_optimal = quote(amount_a_desired, reserve_0, reserve_1)?;
-            if amount_b_optimal <= amount_b_desired {
-                if amount_b_optimal < amount_b_min {
-                    return Err(RouterError::SlippageExceeded);
-                }
-                Ok((amount_a_desired, amount_b_optimal))
-            } else {
-                let amount_a_optimal = quote(amount_b_desired, reserve_1, reserve_0)?;
-                if amount_a_optimal > amount_a_desired {
-                    // This shouldn't happen if quote is correct
-                    return Err(RouterError::InternalError);
-                }
-                if amount_a_optimal < amount_a_min {
-                    return Err(RouterError::SlippageExceeded);
-                }
-                Ok((amount_a_optimal, amount_b_desired))
-            }
-        }
     }
 
     /// Removes liquidity from a token pair (not yet implemented).

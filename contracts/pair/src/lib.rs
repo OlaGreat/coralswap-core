@@ -316,7 +316,7 @@ impl Pair {
             TokenClient::new(env, &pair.token_b).transfer(&contract_address, to, &amount_b_out);
         }
 
-        // ── 8. Read actual balances post-transfer ─────────────────────────────
+        // ── 8. Read actual balances post-transfer ───────────────────────────
         let balance_a = TokenClient::new(env, &pair.token_a).balance(&contract_address);
         let balance_b = TokenClient::new(env, &pair.token_b).balance(&contract_address);
 
@@ -546,8 +546,37 @@ impl Pair {
         let contract = env.current_contract_address();
         let balance_a = TokenClient::new(&env, &state.token_a).balance(&contract);
         let balance_b = TokenClient::new(&env, &state.token_b).balance(&contract);
+
+        // ── Update cumulative price accumulators ──────────────────────────────
+        let current_timestamp = env.ledger().timestamp();
+        let time_elapsed = current_timestamp.saturating_sub(state.block_timestamp_last) as i128;
+
+        if time_elapsed > 0 && state.reserve_a > 0 && state.reserve_b > 0 {
+            // price_a_cumulative += (reserve_b / reserve_a) * time_elapsed
+            // Using integer division: (reserve_b * time_elapsed) / reserve_a
+            let price_a_delta = state
+                .reserve_b
+                .checked_mul(time_elapsed)
+                .ok_or(PairError::Overflow)?
+                .checked_div(state.reserve_a)
+                .ok_or(PairError::Overflow)?;
+            state.price_a_cumulative = state.price_a_cumulative.checked_add(price_a_delta).ok_or(PairError::Overflow)?;
+
+            // price_b_cumulative += (reserve_a / reserve_b) * time_elapsed
+            // Using integer division: (reserve_a * time_elapsed) / reserve_b
+            let price_b_delta = state
+                .reserve_a
+                .checked_mul(time_elapsed)
+                .ok_or(PairError::Overflow)?
+                .checked_div(state.reserve_b)
+                .ok_or(PairError::Overflow)?;
+            state.price_b_cumulative = state.price_b_cumulative.checked_add(price_b_delta).ok_or(PairError::Overflow)?;
+        }
+
+        // ── Update reserves and timestamp ────────────────────────────────────
         state.reserve_a = balance_a;
         state.reserve_b = balance_b;
+        state.block_timestamp_last = current_timestamp;
         set_pair_state(&env, &state);
         PairEvents::sync(&env, balance_a, balance_b);
         Ok(())

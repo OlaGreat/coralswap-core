@@ -12,6 +12,8 @@
 //                      K-invariant, overflow, symmetry, etc.
 //   events.rs        — PairEvents emission assertions for every event type
 //   dynamic_fee.rs   — unit tests for dynamic fee engine (volatility, decay)
+//   sync.rs          — tests for reserve synchronization (Pair::sync)
+//   reentrancy.rs    — tests for reentrancy guard (acquire/release)
 //
 // ---------------------------------------------------------------------------
 
