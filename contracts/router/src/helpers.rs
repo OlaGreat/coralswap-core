@@ -41,10 +41,10 @@ pub trait TokenInterface {
 #[allow(dead_code)]
 pub fn get_amount_out(
     _env: &Env,
-    _amount_in: i128,
-    _reserve_in: i128,
-    _reserve_out: i128,
-    _fee_bps: u32,
+    amount_in: i128,
+    reserve_in: i128,
+    reserve_out: i128,
+    fee_bps: u32,
 ) -> Result<i128, RouterError> {
     if amount_in <= 0 {
         return Err(RouterError::ZeroAmount);
@@ -71,10 +71,10 @@ pub fn get_amount_out(
 #[allow(dead_code)]
 pub fn get_amount_in(
     _env: &Env,
-    _amount_out: i128,
-    _reserve_in: i128,
-    _reserve_out: i128,
-    _fee_bps: u32,
+    amount_out: i128,
+    reserve_in: i128,
+    reserve_out: i128,
+    fee_bps: u32,
 ) -> Result<i128, RouterError> {
     if amount_out <= 0 {
         return Err(RouterError::ZeroAmount);
