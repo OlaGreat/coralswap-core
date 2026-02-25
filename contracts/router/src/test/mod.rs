@@ -21,16 +21,30 @@ pub enum MFKey {
 
 #[contractimpl]
 impl MockFactory {
+    /// Pre-register a pair address for a token pair (sorted canonically).
     pub fn set_pair(env: Env, token_a: Address, token_b: Address, pair: Address) {
-        env.storage().instance().set(&MFKey::Pair(token_a, token_b), &pair);
+        let (t0, t1) = if token_a < token_b { (token_a, token_b) } else { (token_b, token_a) };
+        env.storage().instance().set(&MFKey::Pair(t0, t1), &pair);
     }
 
+    /// Get a registered pair; returns None if not set.
     pub fn get_pair(env: Env, token_a: Address, token_b: Address) -> Option<Address> {
-        env.storage().instance().get(&MFKey::Pair(token_a, token_b))
+        let (t0, t1) = if token_a < token_b { (token_a, token_b) } else { (token_b, token_a) };
+        env.storage().instance().get(&MFKey::Pair(t0, t1))
+    }
+
+    /// "Create" a pair — in tests, just returns the pre-registered address.
+    /// Tests must call set_pair before triggering any path that calls create_pair.
+    pub fn create_pair(env: Env, token_a: Address, token_b: Address) -> Address {
+        let (t0, t1) = if token_a < token_b { (token_a, token_b) } else { (token_b, token_a) };
+        env.storage()
+            .instance()
+            .get(&MFKey::Pair(t0, t1))
+            .expect("test must call set_pair before create_pair is invoked")
     }
 }
 
-/// Minimal mock pair that returns pre-configured burn amounts and LP token.
+/// Minimal mock pair that returns pre-configured amounts and supports all PairClient methods.
 #[contract]
 pub struct MockPair;
 
@@ -52,8 +66,17 @@ impl MockPair {
     }
 
     pub fn set_burn_amounts(env: Env, amount_a: i128, amount_b: i128) {
-        env.storage().instance().set(&MPKey::AmountA, &amount_a);
-        env.storage().instance().set(&MPKey::AmountB, &amount_b);
+        env.storage().instance().set(&MPKey::BurnAmountA, &amount_a);
+        env.storage().instance().set(&MPKey::BurnAmountB, &amount_b);
+    }
+
+    pub fn set_reserves(env: Env, reserve_a: i128, reserve_b: i128) {
+        env.storage().instance().set(&MPKey::ReserveA, &reserve_a);
+        env.storage().instance().set(&MPKey::ReserveB, &reserve_b);
+    }
+
+    pub fn set_liquidity_to_mint(env: Env, liquidity: i128) {
+        env.storage().instance().set(&MPKey::LiquidityToMint, &liquidity);
     }
 
     pub fn lp_token(env: Env) -> Address {
@@ -61,8 +84,8 @@ impl MockPair {
     }
 
     pub fn burn(env: Env, _to: Address) -> (i128, i128) {
-        let a: i128 = env.storage().instance().get(&MPKey::AmountA).unwrap();
-        let b: i128 = env.storage().instance().get(&MPKey::AmountB).unwrap();
+        let a: i128 = env.storage().instance().get(&MPKey::BurnAmountA).unwrap_or(0);
+        let b: i128 = env.storage().instance().get(&MPKey::BurnAmountB).unwrap_or(0);
         (a, b)
     }
 
@@ -88,7 +111,7 @@ impl MockPair {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Sets up a full mock environment with Router, Factory, Pair, and LP token.
+/// Sets up a full mock environment with Router, Factory, Pair, and tokens.
 ///
 /// Returns (env, router_client, token_a, token_b, to, deadline,
 ///          mock_pair_client, lp_token_addr, pair_addr).
@@ -117,23 +140,25 @@ fn setup_full_env() -> (
     let pair_addr = env.register_contract(None, MockPair);
     let mock_pair_client = MockPairClient::new(&env, &pair_addr);
 
-    // Create LP token via Stellar Asset Contract
+    // Create real Stellar Asset Contracts for LP and tokens
     let lp_admin = Address::generate(&env);
     let lp_token_addr = env.register_stellar_asset_contract_v2(lp_admin.clone()).address();
     let lp_sac_client = StellarAssetClient::new(&env, &lp_token_addr);
 
-    // Generate token addresses (must be different)
-    let token_a = Address::generate(&env);
-    let token_b = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token_a = env.register_stellar_asset_contract_v2(token_admin.clone()).address();
+    let token_b = env.register_stellar_asset_contract_v2(token_admin.clone()).address();
     let to = Address::generate(&env);
 
-    // Wire up: Router -> Factory -> Pair -> LP Token
+    // Wire up: Router → Factory → Pair → LP Token
     router_client.initialize(&factory_addr);
     mock_factory_client.set_pair(&token_a, &token_b, &pair_addr);
     mock_pair_client.set_lp_token(&lp_token_addr);
     mock_pair_client.set_burn_amounts(&500, &1000);
 
-    // Mint LP tokens to the caller
+    // Mint tokens to recipient
+    StellarAssetClient::new(&env, &token_a).mint(&to, &10000);
+    StellarAssetClient::new(&env, &token_b).mint(&to, &10000);
     lp_sac_client.mint(&to, &2000);
 
     let deadline = env.ledger().timestamp() + 1000;
@@ -648,7 +673,7 @@ fn test_remove_liquidity_insufficient_output_amount_b() {
 #[test]
 fn test_remove_liquidity_lp_tokens_transferred() {
     let (
-        _env,
+        env,
         router_client,
         token_a,
         token_b,
@@ -659,7 +684,7 @@ fn test_remove_liquidity_lp_tokens_transferred() {
         pair_addr,
     ) = setup_full_env();
 
-    let lp_token = TokenClient::new(&_env, &lp_token_addr);
+    let lp_token = TokenClient::new(&env, &lp_token_addr);
     let balance_before = lp_token.balance(&to);
 
     let liquidity: i128 = 200;
