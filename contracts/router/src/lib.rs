@@ -11,7 +11,7 @@ mod storage;
 mod test;
 
 use errors::RouterError;
-use helpers::{get_pair_address, PairClient};
+use helpers::{compute_optimal_amounts, get_pair_address, PairClient};
 use soroban_sdk::{contract, contractimpl, token::TokenClient, Address, Env, Vec};
 use storage::{get_factory, set_factory};
 
@@ -65,17 +65,62 @@ impl Router {
     /// * `to` - Recipient of LP tokens
     /// * `deadline` - Unix timestamp after which the transaction will revert
     pub fn add_liquidity(
-        _env: Env,
-        _token_a: Address,
-        _token_b: Address,
-        _amount_a_desired: i128,
-        _amount_b_desired: i128,
-        _amount_a_min: i128,
-        _amount_b_min: i128,
-        _to: Address,
-        _deadline: u64,
+        env: Env,
+        token_a: Address,
+        token_b: Address,
+        amount_a_desired: i128,
+        amount_b_desired: i128,
+        amount_a_min: i128,
+        amount_b_min: i128,
+        to: Address,
+        deadline: u64,
     ) -> Result<(i128, i128, i128), RouterError> {
-        todo!()
+        // Check deadline
+        if deadline < env.ledger().timestamp() {
+            return Err(RouterError::Expired);
+        }
+
+        // Validate inputs: reject zero desired amounts
+        if amount_a_desired <= 0 || amount_b_desired <= 0 {
+            return Err(RouterError::ZeroAmount);
+        }
+
+        // Validate inputs: reject identical tokens
+        if token_a == token_b {
+            return Err(RouterError::IdenticalTokens);
+        }
+
+        // Get factory address
+        let factory = get_factory(&env).ok_or(RouterError::PairNotFound)?;
+
+        // Get pair address from factory
+        let pair_address = get_pair_address(&env, &factory, &token_a, &token_b)?;
+
+        // Get pair contract client and current reserves
+        let pair_client = PairClient::new(&env, &pair_address);
+        let (reserve_a, reserve_b, _) = pair_client.get_reserves();
+
+        // Calculate optimal deposit amounts preserving pool ratio
+        let (amount_a, amount_b) = compute_optimal_amounts(
+            amount_a_desired,
+            amount_b_desired,
+            amount_a_min,
+            amount_b_min,
+            reserve_a,
+            reserve_b,
+        )?;
+
+        // The user must provide authorization for token transfers
+        to.require_auth();
+
+        // Transfer tokens from 'to' to the pair contract
+        TokenClient::new(&env, &token_a).transfer(&to, &pair_address, &amount_a);
+        TokenClient::new(&env, &token_b).transfer(&to, &pair_address, &amount_b);
+
+        // Mint LP tokens to the recipient
+        let liquidity = pair_client.mint(&to);
+
+        Ok((amount_a, amount_b, liquidity))
     }
 
     /// Removes liquidity from a token pair (not yet implemented).
