@@ -22,7 +22,10 @@ use math::MINIMUM_LIQUIDITY;
 use soroban_sdk::{
     contract, contractclient, contractimpl, token::TokenClient, Address, Env,
 };
-use storage::{get_fee_state, get_pair_state, set_fee_state, set_pair_state};
+use storage::{
+    get_fee_state, get_pair_state, set_fee_state, set_pair_state, set_reentrancy_guard,
+    FeeState, ReentrancyGuard,
+};
 
 #[contractclient(name = "LpTokenClient")]
 pub trait LpTokenInterface {
@@ -48,6 +51,7 @@ impl Pair {
         token_b: Address,
         lp_token: Address,
     ) -> Result<(), PairError> {
+        // 1. Double-init guard
         if get_pair_state(&env).is_some() {
             return Err(PairError::AlreadyInitialized);
         }
@@ -66,6 +70,31 @@ impl Pair {
         };
 
         set_pair_state(&env, &state);
+
+        // 4. Initialize FeeState with sane defaults
+        let fee_state = FeeState {
+            vol_accumulator: 0,
+            ema_alpha: 10_000_000_000_000, // 10% of SCALE (1e14)
+            baseline_fee_bps: 30,
+            min_fee_bps: 10,
+            max_fee_bps: 100,
+            ramp_up_multiplier: 2,
+            cooldown_divisor: 2,
+            last_fee_update: 0,
+            decay_threshold_blocks: 100,
+        };
+        set_fee_state(&env, &fee_state);
+
+        // 5. Initialize ReentrancyGuard as unlocked
+        set_reentrancy_guard(&env, &ReentrancyGuard { locked: false });
+
+        // 6. Extend instance storage TTL (~7 days at 5s/ledger)
+        const TTL_THRESHOLD: u32 = 60_480;
+        const TTL_EXTEND_TO: u32 = 120_960;
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND_TO);
+
         Ok(())
     }
 
