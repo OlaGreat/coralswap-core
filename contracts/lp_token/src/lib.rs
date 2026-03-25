@@ -206,24 +206,33 @@ impl LpToken {
     }
 
     /// Get the number of decimals
-    pub fn decimals(env: Env) -> u32 {
-        let metadata: TokenMetadata =
-            env.storage().instance().get(&LpTokenKey::Metadata).expect("Token not initialized");
-        metadata.decimals
+    pub fn decimals(env: Env) -> Result<u32, LpTokenError> {
+        let metadata: TokenMetadata = env
+            .storage()
+            .instance()
+            .get(&LpTokenKey::Metadata)
+            .ok_or(LpTokenError::NotInitialized)?;
+        Ok(metadata.decimals)
     }
 
     /// Get the token name
-    pub fn name(env: Env) -> String {
-        let metadata: TokenMetadata =
-            env.storage().instance().get(&LpTokenKey::Metadata).expect("Token not initialized");
-        metadata.name
+    pub fn name(env: Env) -> Result<String, LpTokenError> {
+        let metadata: TokenMetadata = env
+            .storage()
+            .instance()
+            .get(&LpTokenKey::Metadata)
+            .ok_or(LpTokenError::NotInitialized)?;
+        Ok(metadata.name)
     }
 
     /// Get the token symbol
-    pub fn symbol(env: Env) -> String {
-        let metadata: TokenMetadata =
-            env.storage().instance().get(&LpTokenKey::Metadata).expect("Token not initialized");
-        metadata.symbol
+    pub fn symbol(env: Env) -> Result<String, LpTokenError> {
+        let metadata: TokenMetadata = env
+            .storage()
+            .instance()
+            .get(&LpTokenKey::Metadata)
+            .ok_or(LpTokenError::NotInitialized)?;
+        Ok(metadata.symbol)
     }
 
     /// Get the total supply
