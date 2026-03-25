@@ -1,4 +1,5 @@
 use crate::errors::LpTokenError;
+use crate::storage::LpTokenKey;
 use crate::{LpToken, LpTokenClient};
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
@@ -15,6 +16,11 @@ fn setup_env() -> (Env, Address, LpTokenClient<'static>, Address) {
 
 fn initialize_client(client: &LpTokenClient<'_>, env: &Env, admin: &Address) {
     client.initialize(admin, &7, &String::from_str(env, "Coral LP"), &String::from_str(env, "CLP"));
+}
+
+fn has_balance_entry(env: &Env, contract_id: &Address, account: &Address) -> bool {
+    let key = LpTokenKey::Balance(account.clone());
+    env.as_contract(contract_id, || env.storage().persistent().has(&key))
 }
 
 #[test]
@@ -93,4 +99,25 @@ fn burn_exact_balance_zeroes_supply() {
 
     assert_eq!(client.balance(&user), 0);
     assert_eq!(client.total_supply(), 0);
+}
+
+#[test]
+fn transfer_from_zero_balance_removes_sender_storage_entry() {
+    let (env, contract_id, client, admin) = setup_env();
+    initialize_client(&client, &env, &admin);
+
+    let owner = Address::generate(&env);
+    let spender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    client.mint(&owner, &100);
+    client.approve(&owner, &spender, &100, &env.ledger().sequence());
+
+    assert!(has_balance_entry(&env, &contract_id, &owner));
+
+    client.transfer_from(&spender, &owner, &recipient, &100);
+
+    assert_eq!(client.balance(&owner), 0);
+    assert_eq!(client.balance(&recipient), 100);
+    assert!(!has_balance_entry(&env, &contract_id, &owner));
 }
