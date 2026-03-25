@@ -74,9 +74,8 @@ pub fn update_volatility(
         let scale_to_bps = SCALE / 10_000;
         let fee_headroom =
             (fee_state.max_fee_bps as i128).saturating_sub(fee_state.baseline_fee_bps as i128);
-        let max_vol = fee_headroom
-            .saturating_mul(scale_to_bps)
-            / (fee_state.ramp_up_multiplier as i128);
+        let max_vol =
+            fee_headroom.saturating_mul(scale_to_bps) / (fee_state.ramp_up_multiplier as i128);
         fee_state.vol_accumulator = fee_state.vol_accumulator.min(max_vol);
     }
 

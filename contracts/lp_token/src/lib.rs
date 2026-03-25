@@ -315,11 +315,7 @@ impl LpToken {
         Ok(())
     }
 
-    fn write_balance(
-        storage: soroban_sdk::storage::Storage,
-        key: &LpTokenKey,
-        balance: i128,
-    ) {
+    fn write_balance(storage: soroban_sdk::storage::Storage, key: &LpTokenKey, balance: i128) {
         if balance == 0 {
             storage.persistent().remove(key);
         } else {
