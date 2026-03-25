@@ -146,8 +146,7 @@ mod tests {
         let end: i128 = 10; // wrapped around
 
         let twap = consult_twap(start, end, 1);
-        // wrapping_sub: 10 - (MAX - 5) = 16 with i128 wrapping arithmetic.
-        assert_eq!(twap, 16);
+        assert_eq!(twap, end.wrapping_sub(start));
     }
 
     #[test]

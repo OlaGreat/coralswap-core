@@ -52,7 +52,7 @@ fn setup_pair() -> (
     LpTokenClient<'static>,
 ) {
     let env = Env::default();
-    env.mock_all_auths();
+    env.mock_all_auths_allowing_non_root_auth();
 
     let token_a_id = env.register_contract(None, MockToken);
     let token_b_id = env.register_contract(None, MockToken);
@@ -150,16 +150,16 @@ fn test_price_accumulation() {
     let (env, pair_client, token_a, token_b, _lp_client) = setup_pair();
     let user = Address::generate(&env);
 
-    token_a.mint(&user, &100_i128);
-    token_b.mint(&user, &400_i128);
-    token_a.transfer(&user, &pair_client.address, &100_i128);
-    token_b.transfer(&user, &pair_client.address, &400_i128);
+    token_a.mint(&user, &10_000_i128);
+    token_b.mint(&user, &40_000_i128);
+    token_a.transfer(&user, &pair_client.address, &10_000_i128);
+    token_b.transfer(&user, &pair_client.address, &40_000_i128);
     pair_client.mint(&user);
 
     env.ledger().set_timestamp(env.ledger().timestamp() + 10);
     pair_client.sync();
 
     let (res_a, res_b, _) = pair_client.get_reserves();
-    assert_eq!(res_a, 100);
-    assert_eq!(res_b, 400);
+    assert_eq!(res_a, 10_000);
+    assert_eq!(res_b, 40_000);
 }
