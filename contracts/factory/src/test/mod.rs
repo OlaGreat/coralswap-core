@@ -8,13 +8,22 @@ mod factory_tests {
     use std::path::PathBuf;
 
     fn load_wasm(file_name: &str) -> std::vec::Vec<u8> {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target/wasm32v1-none/release")
-            .join(file_name);
+        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
+        let candidates = [
+            base.join("wasm32-unknown-unknown/release").join(file_name),
+            base.join("wasm32v1-none/release").join(file_name),
+        ];
 
-        fs::read(&path).unwrap_or_else(|err| {
-            panic!("failed to read test wasm artifact {}: {err}", path.display())
-        })
+        for path in candidates {
+            if let Ok(bytes) = fs::read(&path) {
+                return bytes;
+            }
+        }
+
+        panic!(
+            "failed to read test wasm artifact {}; checked wasm32-unknown-unknown and wasm32v1-none release targets",
+            file_name
+        );
     }
 
     /// Helper: sets up a fresh Env, deploys the factory, initializes it with
