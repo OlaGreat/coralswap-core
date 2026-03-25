@@ -3,17 +3,18 @@ use soroban_sdk::Env;
 mod factory_tests {
     use super::*;
     use crate::{Factory, FactoryClient};
+    use soroban_sdk::{testutils::Address as _, Address, Bytes, Vec};
     use std::fs;
     use std::path::PathBuf;
-    use soroban_sdk::{testutils::Address as _, Address, Bytes, Vec};
 
     fn load_wasm(file_name: &str) -> std::vec::Vec<u8> {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../target/wasm32v1-none/release")
             .join(file_name);
 
-        fs::read(&path)
-            .unwrap_or_else(|err| panic!("failed to read test wasm artifact {}: {err}", path.display()))
+        fs::read(&path).unwrap_or_else(|err| {
+            panic!("failed to read test wasm artifact {}: {err}", path.display())
+        })
     }
 
     /// Helper: sets up a fresh Env, deploys the factory, initializes it with
